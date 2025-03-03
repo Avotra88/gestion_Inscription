@@ -1,0 +1,34 @@
+{% extends 'base.html' %}
+
+{% block content %}
+    <div class="container">
+        <h2>Audit des Inscriptions</h2>
+
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>#</th>
+                    <th>Matricule</th>
+                    <th>Nom</th>
+                    <th>Action</th>
+                    <th>Date</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for audit in audits %}
+                    <tr>
+                        <td>{{ audit.id }}</td>
+                        <td>{{ audit.inscription.matricule }}</td>
+                        <td>{{ audit.inscription.nom }}</td>
+                        <td>{{ audit.type_action }}</td>
+                        <td>{{ audit.date_action }}</td>
+                    </tr>
+                {% empty %}
+                    <tr>
+                        <td colspan="5">Aucun audit trouvé.</td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+{% endblock %}

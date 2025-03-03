@@ -1,0 +1,49 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Se connecter{% endblock %}
+
+{% block content %}
+    <link rel="stylesheet" type="text/css" href="{% static 'css/styles.css' %}">
+
+    <div class="container">
+        <h2>Se connecter</h2>
+        <form method="post">
+            {% csrf_token %}
+
+            {% if form.non_field_errors %}
+                <ul class="errorlist nonfield">
+                    {% for error in form.non_field_errors %}
+                        <li>{{ error }}</li>
+                    {% endfor %}
+                </ul>
+            {% endif %}
+
+            <p>
+                <label for="id_username">Nom d'utilisateur :</label>
+                <input type="text" name="username" value="{{ form.username.value|default:'' }}" autofocus autocomplete="username" maxlength="150" required id="id_username">
+                {% if form.username.errors %}
+                    <ul class="errorlist">
+                        {% for error in form.username.errors %}
+                            <li>{{ error }}</li>
+                        {% endfor %}
+                    </ul>
+                {% endif %}
+            </p>
+
+            <p>
+                <label for="id_password">Mot de passe :</label>
+                <input type="password" name="password" autocomplete="current-password" required id="id_password">
+                {% if form.password.errors %}
+                    <ul class="errorlist">
+                        {% for error in form.password.errors %}
+                            <li>{{ error }}</li>
+                        {% endfor %}
+                    </ul>
+                {% endif %}
+            </p>
+
+            <button type="submit">Se connecter</button>
+        </form>
+    </div>
+{% endblock %}

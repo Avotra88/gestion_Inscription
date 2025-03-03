@@ -1,0 +1,86 @@
+{% extends 'base.html' %}
+
+{% block title %}Tableau de bord{% endblock %}
+
+{% block content %}
+    <h1>Tableau de bord</h1>
+
+    <!-- Section des Inscriptions -->
+    <section>
+        <h2>Inscriptions</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Matricule</th>
+                    <th>Nom</th>
+                    <th>Prénom</th>
+                    <th>Date de naissance</th>
+                    <th>Adresse</th>
+                    <th>Droit d'inscription</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for inscription in inscriptions %}
+                    <tr>
+                        <td>{{ inscription.matricule }}</td>
+                        <td>{{ inscription.nom }}</td>
+                        <td>{{ inscription.prenom }}</td>
+                        <td>{{ inscription.date_naissance|date:"d M Y" }}</td>
+                        <td>{{ inscription.adresse }}</td>
+                        <td>{{ inscription.droit_inscription }}</td>
+                        <td>
+                            <!-- Boutons pour la modification -->
+                            <form action="{% url 'modifier_inscription' inscription.id %}" method="get" style="display:inline;">
+                                <button type="submit" class="btn btn-info">Modifier</button>
+                            </form>
+                        </td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </section>
+
+    <!-- Section Historique des actions -->
+    <section>
+        <h2>Historique des actions</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Type d'action</th>
+                    <th>Matricule</th>
+                    <th>Nom</th>
+                    <th>Prénom</th>
+                    <th>Date de naissance</th>
+                    <th>Adresse</th>
+                    <th>Droit Ancien</th>
+                    <th>Droit Nouveau</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for audit in audits %}
+                    <tr>
+                        <td>{{ audit.type_action }}</td>
+                        <td>{{ audit.matricule }}</td>
+                        <td>{{ audit.nom }}</td>
+                        <td>{{ audit.prenom }}</td>
+                        <td>{{ audit.date_naissance|date:"d M Y" }}</td>
+                        <td>{{ audit.adresse }}</td>
+                        <td>{{ audit.droit_ancien }}</td>
+                        <td>{{ audit.droit_nouveau }}</td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </section>
+
+    <!-- Section Statistiques -->
+    <section>
+        <h3>Statistiques</h3>
+        <ul>
+            <li>Ajouts: {{ stats.ajouts }}</li>
+            <li>Modifications: {{ stats.modifications }}</li>
+            <li>Suppressions: {{ stats.suppressions }}</li>
+        </ul>
+    </section>
+{% endblock %}
