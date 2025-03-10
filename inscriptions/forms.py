@@ -1,6 +1,6 @@
 # forms.py
 from django import forms
-from .models import Inscription, Audit, AuditAction
+from .models import Inscription, AuditInscription  # Utilisation de AuditInscription au lieu de Audit et AuditAction
 from django.contrib.auth.models import User
 
 
@@ -9,12 +9,8 @@ class InscriptionForm(forms.ModelForm):
         model = Inscription
         fields = ['matricule', 'nom', 'prenom', 'date_naissance', 'adresse', 'droit_inscription']
 
-class AuditForm(forms.ModelForm):
-    class Meta:
-        model = Audit
-        fields = ['type_action', 'matricule', 'nom', 'prenom', 'date_naissance', 'adresse', 'droit_ancien', 'droit_nouveau']
 
-class AuditActionForm(forms.ModelForm):
+class AuditInscriptionForm(forms.ModelForm):  # Formulaire pour le modèle AuditInscription
     class Meta:
-        model = AuditAction
-        fields = ['type_action', 'audit', 'utilisateur']
+        model = AuditInscription
+        fields = ['type_action', 'matricule', 'nom', 'prenom', 'date_naissance', 'adresse', 'droit_ancien', 'droit_nouveau']

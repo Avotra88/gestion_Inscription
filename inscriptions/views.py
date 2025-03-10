@@ -1,13 +1,12 @@
-from django.contrib.auth.forms import AuthenticationForm 
+from django.contrib.auth.forms import AuthenticationForm
 from django.contrib.auth import login, logout
 from django.shortcuts import render, redirect, get_object_or_404
 from inscriptions.models import Inscription, AuditInscription
 from django.contrib.auth.decorators import login_required
 import logging
 from django.contrib import messages
-from inscriptions.models import Audit  
-from .forms import InscriptionForm, AuditForm,  AuditActionForm 
-from .models import StatistiqueInscription, Inscription, AuditInscription, AuditAction  # Ajoutez StatistiqueInscription ici
+from .forms import InscriptionForm
+from .models import StatistiqueInscription
 
 
 # Configuration du logger
@@ -17,16 +16,24 @@ logger = logging.getLogger(__name__)
 def home(request):
     return redirect('login')
 
-# Vue pour le tableau de bord
 @login_required
 def dashboard(request):
     inscriptions = Inscription.objects.all()
-    audits = AuditInscription.objects.all()
+    audits = AuditInscription.objects.all()  # Récupérer toutes les entrées d'audit
+    
+    # Calcul des statistiques basées sur les actions dans les audits
+    ajouts = audits.filter(type_action='ajout').count()
+    modifications = audits.filter(type_action='Modification').count()
+    suppressions = audits.filter(type_action='Suppression').count()
+
+    print(f"Ajouts: {ajouts}, Modifications: {modifications}, Suppressions: {suppressions}")
+
     stats = {
-        'ajouts': audits.filter(type_action='ajout').count(),
-        'modifications': audits.filter(type_action='modification').count(),
-        'suppressions': audits.filter(type_action='suppression').count(),
+        'ajouts': ajouts,
+        'modifications': modifications,
+        'suppressions': suppressions,
     }
+
     return render(request, 'dashboard.html', {'inscriptions': inscriptions, 'audits': audits, 'stats': stats})
 
 # Vue pour ajouter une inscription
@@ -44,14 +51,20 @@ def ajouter_inscription(request):
             messages.error(request, "Tous les champs sont obligatoires.")
             return render(request, 'ajouter_inscription.html')
 
-        Inscription.objects.create(
+        # Création de l'inscription avec l'utilisateur connecté
+        inscription = Inscription.objects.create(
             matricule=matricule,
             nom=nom,
             prenom=prenom,
             date_naissance=date_naissance,
             adresse=adresse,
-            droit_inscription=droit_inscription
+            droit_inscription=droit_inscription,
+            utilisateur=request.user  # Ajout de l'utilisateur connecté
         )
+
+        # Enregistrement de l'audit pour l'ajout
+        create_audit(inscription, 'ajout', request)
+
         messages.success(request, "Inscription ajoutée avec succès.")
         return redirect('dashboard')
     
@@ -84,76 +97,6 @@ def logout_view(request):
     messages.info(request, "Vous avez été déconnecté.")
     return redirect('login')
 
-# Vue d'audit d'une inscription spécifique
-@login_required
-def audit_inscription(request, pk):
-    inscription = get_object_or_404(Inscription, id=pk)
-
-    if request.method == 'POST':
-        action = request.POST.get('action')
-
-        if action == 'ajouter':
-            AuditInscription.objects.create(
-                inscription=inscription,
-                matricule=inscription.matricule,
-                nom=inscription.nom,
-                prenom=inscription.prenom,
-                date_naissance=inscription.date_naissance,
-                adresse=inscription.adresse,
-                droit_inscription=inscription.droit_inscription,
-                type_action='ajout',
-                utilisateur=request.user.username
-            )
-            messages.success(request, "Audit d'ajout enregistré.")
-
-        elif action == 'modifier':
-            AuditInscription.objects.create(
-                inscription=inscription,
-                matricule=inscription.matricule,
-                nom=inscription.nom,
-                prenom=inscription.prenom,
-                date_naissance=inscription.date_naissance,
-                adresse=inscription.adresse,
-                droit_inscription=inscription.droit_inscription,
-                type_action='modification',
-                utilisateur=request.user.username
-            )
-            messages.success(request, "Audit de modification enregistré.")
-
-        elif action == 'supprimer':
-            AuditInscription.objects.create(
-                inscription=inscription,
-                matricule=inscription.matricule,
-                nom=inscription.nom,
-                prenom=inscription.prenom,
-                date_naissance=inscription.date_naissance,
-                adresse=inscription.adresse,
-                droit_inscription=inscription.droit_inscription,
-                type_action='suppression',
-                utilisateur=request.user.username
-            )
-            inscription.delete()
-            messages.success(request, "Inscription supprimée avec succès.")
-            return redirect('dashboard')
-
-    return render(request, 'audit_inscription_detail.html', {'inscription': inscription})
-
-# Vue pour modifier une inscription
-@login_required
-def modifier_inscription(request, id):
-    inscription = get_object_or_404(Inscription, pk=id)
-    if request.method == 'POST':
-        form = InscriptionForm(request.POST, instance=inscription)
-        if form.is_valid():
-            form.save()
-            messages.success(request, 'Les modifications ont été sauvegardées avec succès.')
-            return redirect('dashboard')
-        else:
-            messages.error(request, 'Il y a eu une erreur lors de la sauvegarde.')
-    else:
-        form = InscriptionForm(instance=inscription)
-    return render(request, 'modifier_inscription.html', {'form': form})
-
 # Vue pour auditer une action sur une inscription
 @login_required
 def audit_action(request, id):
@@ -169,75 +112,130 @@ def audit_action(request, id):
             inscription.adresse = request.POST.get('adresse', inscription.adresse)
             inscription.droit_inscription = request.POST.get('droit_inscription') == "on"
             inscription.save()
-            AuditInscription.objects.create(
-                inscription=inscription,
-                matricule=inscription.matricule,
-                nom=inscription.nom,
-                prenom=inscription.prenom,
-                date_naissance=inscription.date_naissance,
-                adresse=inscription.adresse,
-                droit_inscription=inscription.droit_inscription,
-                type_action='modification',
-                utilisateur=request.user.username
-            )
+            create_audit(inscription, 'modification', request)
             messages.success(request, "Inscription modifiée avec succès.")
         elif action == 'supprimer':
+            create_audit(inscription, 'suppression', request)
             inscription.delete()
-            AuditInscription.objects.create(
-                inscription=inscription,
-                matricule=inscription.matricule,
-                nom=inscription.nom,
-                prenom=inscription.prenom,
-                date_naissance=inscription.date_naissance,
-                adresse=inscription.adresse,
-                droit_inscription=inscription.droit_inscription,
-                type_action='suppression',
-                utilisateur=request.user.username
-            )
             messages.success(request, "Inscription supprimée avec succès.")
         
     return redirect('dashboard')
 
+def create_audit(inscription, action, request):
+    # Vérifier si l'utilisateur est connecté
+    utilisateur = request.user if request.user.is_authenticated else None
 
-def delete_action(request, id):
-    # Récupérez l'objet à supprimer
-    item = get_object_or_404(Inscription, id=id)  # Remplacez 'Inscription' par le nom de votre modèle si nécessaire
-    
-    # Supprimez l'objet
-    item.delete()
-    
-    # Redirigez vers une autre page après la suppression
-    return redirect('index')  # Remplacez 'some_view_name' par le nom de la vue vers laquelle vous voulez rediriger
+    # Si l'utilisateur n'est pas authentifié, vous pouvez soit le définir par défaut, soit lever une exception
+    if utilisateur is None:
+        # Par exemple, si vous souhaitez laisser un utilisateur par défaut (par exemple, un admin ou autre)
+        utilisateur = 'Utilisateur Anonyme'  # Ou une instance d'utilisateur par défaut
 
-# Vue pour la modification
-def modifier_action(request, id):
-    action = get_object_or_404(AuditAction, id=id)
-    if request.method == 'POST':
-        form = AuditActionForm(request.POST, instance=action)
-        if form.is_valid():
-            form.save()
-            return redirect('statistiques')  # Redirige vers la vue des statistiques
-    else:
-        form = AuditActionForm(instance=action)
-    return render(request, 'modifier_action.html', {'form': form})
+    # Assigner les anciens et nouveaux droits d'inscription
+    droit_ancien = inscription.droit_inscription  # Assurez-vous que ce champ existe dans votre modèle
+    droit_nouveau = inscription.droit_inscription  # Ajoutez la logique pour mettre à jour le droit si nécessaire
 
+    # Créer un audit
+    AuditInscription.objects.create(
+        inscription=inscription,
+        matricule=inscription.matricule,
+        nom=inscription.nom,
+        prenom=inscription.prenom,
+        date_naissance=inscription.date_naissance,
+        adresse=inscription.adresse,
+        droit_ancien=droit_ancien,  # Avant modification
+        droit_nouveau=droit_nouveau,  # Après modification
+        type_action=action,
+        utilisateur=utilisateur  # Assurez-vous que l'utilisateur est renseigné
+    )
+
+
+
+# Vue pour afficher les statistiques des inscriptions
 @login_required
 def statistiques_inscriptions(request):
-    statistiques = StatistiqueInscription.objects.all()
-
-    # Vous pouvez ajouter des filtres ici si nécessaire, comme par date ou par type d'action
+    statistiques = StatistiqueInscription.objects.all().order_by('-timestamp')
     return render(request, 'inscriptions/statistiques_inscriptions.html', {'statistiques': statistiques})
 
+# Vue pour modifier une inscription
+@login_required
+def modifier_inscription(request, id):
+    inscription = get_object_or_404(Inscription, id=id)
+    # Vérifier si l'utilisateur est connecté
+    utilisateur = request.user if request.user.is_authenticated else None
 
-def enregistrer_statistique(request):
+    # Si l'utilisateur n'est pas authentifié, vous pouvez soit le définir par défaut, soit lever une exception
+    if utilisateur is None:
+        # Par exemple, si vous souhaitez laisser un utilisateur par défaut (par exemple, un admin ou autre)
+        utilisateur = 'Utilisateur Anonyme'  # Ou une instance d'utilisateur par défaut
+
     if request.method == 'POST':
-        # Exemple d'ajout d'une nouvelle statistique
-        statistique = StatistiqueInscription.objects.create(
-            action_type='ajout',  # L'action peut être 'ajout', 'modification' ou 'suppression'
-            inscription_id=request.POST.get('inscription_id'),
-            timestamp=request.POST.get('timestamp')
-        )
-        statistique.save()
-        return redirect('statistique_view')  # Rediriger après l'enregistrement
+        form = InscriptionForm(request.POST, instance=inscription)
+        if form.is_valid():
+            
 
-    return render(request, 'enregistrer_statistique.html')
+            # Assigner les anciens et nouveaux droits d'inscription
+            droit_ancien = inscription.droit_inscription  # Assurez-vous que ce champ existe dans votre modèle
+            droit_nouveau = inscription.droit_inscription  # Ajoutez la logique pour mettre à jour le droit si nécessaire
+
+            # Créer un audit
+            AuditInscription.objects.create(
+                inscription=inscription,
+                matricule=inscription.matricule,
+                nom=inscription.nom,
+                prenom=inscription.prenom,
+                date_naissance=inscription.date_naissance,
+                adresse=inscription.adresse,
+                droit_ancien=droit_ancien,  # Avant modification
+                droit_nouveau=droit_nouveau,  # Après modification
+                type_action="Modification",
+                utilisateur=utilisateur  # Assurez-vous que l'utilisateur est renseigné
+            )
+            form.save()
+            messages.success(request, "L'inscription a été modifiée avec succès !")
+            return redirect('dashboard')
+    else:
+        form = InscriptionForm(instance=inscription)
+
+    return render(request, 'modifier_inscription.html', {'form': form, 'id': id})
+
+# Vue pour supprimer une inscription
+@login_required
+def delete_action(request, id):
+    # Vérifier si l'utilisateur est connecté
+    utilisateur = request.user if request.user.is_authenticated else None
+
+    # Si l'utilisateur n'est pas authentifié, vous pouvez soit le définir par défaut, soit lever une exception
+    if utilisateur is None:
+        # Par exemple, si vous souhaitez laisser un utilisateur par défaut (par exemple, un admin ou autre)
+        utilisateur = 'Utilisateur Anonyme'  # Ou une instance d'utilisateur par défaut
+    # Logique pour supprimer l'objet avec l'id donné
+    try:
+        objet_a_supprimer = Inscription.objects.get(id=id)
+
+        # Assigner les anciens et nouveaux droits d'inscription
+        droit_ancien = objet_a_supprimer.droit_inscription  # Assurez-vous que ce champ existe dans votre modèle
+        droit_nouveau = objet_a_supprimer.droit_inscription  # Ajoutez la logique pour mettre à jour le droit si nécessaire
+
+        # Créer un audit
+        AuditInscription.objects.create(
+            inscription=objet_a_supprimer,
+            matricule=objet_a_supprimer.matricule,
+            nom=objet_a_supprimer.nom,
+            prenom=objet_a_supprimer.prenom,
+            date_naissance=objet_a_supprimer.date_naissance,
+            adresse=objet_a_supprimer.adresse,
+            droit_ancien=droit_ancien,  # Avant modification
+            droit_nouveau=droit_nouveau,  # Après modification
+            type_action="Suppression",
+            utilisateur=utilisateur  # Assurez-vous que l'utilisateur est renseigné
+        )
+        objet_a_supprimer.delete()
+        messages.success(request, "L'inscription a été supprimée avec succès.")
+        return redirect('dashboard')  # Redirige vers la page du tableau de bord après la suppression
+    except Inscription.DoesNotExist:
+        # Gère le cas où l'objet n'existe pas
+        messages.error(request, "L'inscription spécifiée n'existe pas.")
+        return redirect('dashboard')  # Redirige vers le tableau de bord en cas d'erreur
+
+
+

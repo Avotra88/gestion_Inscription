@@ -1,0 +1,11 @@
+{
+    "sqltools.useNodeRuntime": true,
+    "sqltools.connections": [
+        {
+            "previewLimit": 50,
+            "driver": "SQLite",
+            "name": "root",
+            "database": "${workspaceFolder:gestion_inscriptions}/db.squilte3"
+        }
+    ]
+}

@@ -31,6 +31,7 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'inscriptions',  # Assurez-vous que votre application inscriptions est bien ajoutée ici
+    'gestion_inscriptions',
 ]
 
 MIDDLEWARE = [
@@ -64,16 +65,27 @@ TEMPLATES = [
 WSGI_APPLICATION = 'gestion_inscriptions.wsgi.application'
 
 # Database
+# DATABASES = {
+#     'default': {
+#         'ENGINE': 'django.db.backends.mysql',  # Utilisez le backend MySQL
+#         'NAME': os.getenv('DB_NAME', 'gestion_inscription'),  # Utilisez une variable d'environnement pour la base de données
+#         'USER': os.getenv('DB_USER', 'root'),  # Utilisateur MySQL
+#         'PASSWORD': os.getenv('DB_PASSWORD', '123456789'),  # Utilisez une variable d'environnement pour le mot de passe
+#         'HOST': os.getenv('DB_HOST', 'localhost'),  # Si la base de données est sur la même machine
+#         'PORT': os.getenv('DB_PORT', '3306'),  # Le port MySQL par défaut
+#     }
+# }
+
+
+
 DATABASES = {
     'default': {
-        'ENGINE': 'django.db.backends.mysql',  # Utilisez le backend MySQL
-        'NAME': os.getenv('DB_NAME', 'gestion_inscription'),  # Utilisez une variable d'environnement pour la base de données
-        'USER': os.getenv('DB_USER', 'root'),  # Utilisateur MySQL
-        'PASSWORD': os.getenv('DB_PASSWORD', '123456789'),  # Utilisez une variable d'environnement pour le mot de passe
-        'HOST': os.getenv('DB_HOST', 'localhost'),  # Si la base de données est sur la même machine
-        'PORT': os.getenv('DB_PORT', '3306'),  # Le port MySQL par défaut
+        'ENGINE': 'django.db.backends.sqlite3',  # Utilisation de SQLite
+        'NAME': os.path.join(BASE_DIR, 'db.sqlite3'),  # Fichier de la base de données SQLite
     }
 }
+
+
 
 # Password validation
 AUTH_PASSWORD_VALIDATORS = [
