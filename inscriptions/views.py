@@ -62,6 +62,12 @@ def dashboard_admin(request):
         'stats': stats,
         'users': users,  # Passer les utilisateurs récupérés au template
     })
+    
+@login_required
+def user_list(request):
+    # Récupérer tous les utilisateurs
+    users = User.objects.all()
+    return render(request, 'user_list.html', {'users': users})
 
 # Signal pour créer les groupes et permissions
 @receiver(post_migrate)
@@ -160,34 +166,42 @@ def redirect_dashboard(user):
 @login_required
 def audit_action(request, id):
     inscription = get_object_or_404(Inscription, id=id)
-    
+
     if request.method == 'POST':
         action = request.POST.get('action')
-        
+
         if action == 'modifier':
+            # Convertir date_naissance en datetime si elle est fournie
+            date_naissance_str = request.POST.get('date_naissance', None)
+            if date_naissance_str:
+                try:
+                    inscription.date_naissance = datetime.strptime(date_naissance_str, "%Y-%m-%d").date()
+                except ValueError:
+                    messages.error(request, "Format de date invalide")
+
             inscription.nom = request.POST.get('nom', inscription.nom)
             inscription.prenom = request.POST.get('prenom', inscription.prenom)
-            inscription.date_naissance = request.POST.get('date_naissance', inscription.date_naissance)
             inscription.adresse = request.POST.get('adresse', inscription.adresse)
-            inscription.droit_inscription = request.POST.get('droit_inscription') == "on"
+            inscription.droit_inscription = request.POST.get('droit_inscription') == "on" if 'droit_inscription' in request.POST else False
             inscription.save()
             create_audit(inscription, 'modification', request)
             messages.success(request, "Inscription modifiée avec succès.")
+
         elif action == 'supprimer':
             create_audit(inscription, 'suppression', request)
             inscription.delete()
             messages.success(request, "Inscription supprimée avec succès.")
-        
-    return redirect('dashboard_user')  # Redirection vers le tableau de bord de l'utilisateur
+
+    return redirect('dashboard_user')
 
 def create_audit(inscription, action, request):
-    utilisateur = request.user if request.user.is_authenticated else 'Utilisateur Anonyme'
+    utilisateur = request.user if request.user.is_authenticated else None
 
-    # Assigner les anciens et nouveaux droits d'inscription
-    droit_ancien = inscription.droit_inscription  
+    # Récupérer l'ancien état des droits
+    dernier_audit = AuditInscription.objects.filter(inscription=inscription).order_by('-date_action').first()
+    droit_ancien = dernier_audit.droit_nouveau if dernier_audit else None  
     droit_nouveau = inscription.droit_inscription  
 
-    # Créer un audit
     AuditInscription.objects.create(
         inscription=inscription,
         matricule=inscription.matricule,
@@ -195,10 +209,10 @@ def create_audit(inscription, action, request):
         prenom=inscription.prenom,
         date_naissance=inscription.date_naissance,
         adresse=inscription.adresse,
-        droit_ancien=droit_ancien,  
-        droit_nouveau=droit_nouveau,  
+        droit_ancien=droit_ancien,
+        droit_nouveau=droit_nouveau,
         type_action=action,
-        utilisateur=utilisateur  
+        utilisateur=utilisateur
     )
 
 # Vue pour afficher les statistiques des inscriptions
@@ -261,6 +275,15 @@ def delete_action(request, id):
         messages.error(request, "L'inscription spécifiée n'existe pas.")
         return redirect('dashboard_user')  # Redirige vers le tableau de bord en cas d'erreur
 
+def confirm_delete(request, inscription_id):
+    inscription = get_object_or_404(Inscription, id=inscription_id)
+    
+    if request.method == 'POST':
+        inscription.delete()
+        messages.success(request, "L'inscription a été supprimée avec succès.")
+        return redirect('dashboard_user')  # Redirigez vers le tableau de bord ou une autre page
+    
+    return render(request, 'confirm_delete.html', {'inscription': inscription})
 
 @login_required
 def create_user(request):

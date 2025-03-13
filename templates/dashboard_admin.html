@@ -3,39 +3,47 @@
 {% block content %}
     <h2>Tableau de bord de l'administrateur</h2>
     
-    <!-- Gestion des utilisateurs -->
-    <h3>Gestion des utilisateurs</h3>
-    <ul>
-        <li><a href="{% url 'create_user' %}">Ajouter un utilisateur</a></li>
-    </ul>
+ <!-- Gestion des utilisateurs -->
+<div class="card shadow-sm p-3 mb-4 bg-light rounded border-primary">
+    <h3 class="text-center text-primary fw-bold fs-4">Gestion des utilisateurs</h3>
+    <div class="text-center mt-3">
+        <a href="{% url 'create_user' %}" class="btn btn-sm btn-primary fw-bold px-3 py-1">
+            ➕ Ajouter un utilisateur
+        </a>
+    </div>
+</div>
+
+
     
-    <!-- Tableau des utilisateurs -->
-    <h3>Liste des utilisateurs</h3>
-    <table>
-        <thead>
+   <!-- Tableau des utilisateurs -->
+<h3>Liste des utilisateurs</h3>
+<table class="table table-striped">
+    <thead>
+        <tr>
+            <th>Nom d'utilisateur</th>
+            <th>Email</th>
+            <th>Date de création</th>
+            <th>Actions</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for user in users %}
             <tr>
-                <th>Nom d'utilisateur</th>
-                <th>Nom complet</th>
-                <th>Actions</th>
+                <td>{{ user.username }}</td>
+                <td>{{ user.email }}</td>       <!-- Affichage de l'email -->
+                <td>{{ user.date_joined|date:"d M Y" }}</td> <!-- Affichage de la date de création -->
+                <td>
+                    <a href="{% url 'modify_user' user.id %}" class="btn btn-primary">Modifier</a>
+                    <a href="{% url 'delete_user' user.id %}" class="btn btn-danger" onclick="return confirm('Êtes-vous sûr de vouloir supprimer cet utilisateur ?')">Supprimer</a>
+                </td>
             </tr>
-        </thead>
-        <tbody>
-            {% for user in users %}
-                <tr>
-                    <td>{{ user.username }}</td>
-                    <td>{{ user.get_full_name }}</td>
-                    <td>
-                        <a href="{% url 'modify_user' user.id %}" class="btn btn-primary">Modifier</a>
-                        <a href="{% url 'delete_user' user.id %}" class="btn btn-danger" onclick="return confirm('Êtes-vous sûr de vouloir supprimer cet utilisateur ?')">Supprimer</a>
-                    </td>
-                </tr>
-            {% endfor %}
-        </tbody>
-    </table>
-    
+        {% endfor %}
+    </tbody>
+</table>
+
     <!-- Historique des audits -->
     <h3>Historique des audits</h3>
-    <table>
+    <table class="table table-bordered">
         <thead>
             <tr>
                 <th>Type d'action</th>
@@ -53,7 +61,7 @@
                     <td>{{ audit.matricule }}</td>
                     <td>{{ audit.nom }}</td>
                     <td>{{ audit.prenom }}</td>
-                    <td>{{ audit.timestamp }}</td>
+                    <td>{{ audit.date_action|date:"d/m/Y H:i" }}</td>  <!-- Affichage de la date avec un format -->
                     <td>{{ audit.utilisateur }}</td>
                 </tr>
             {% endfor %}

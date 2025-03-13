@@ -1,0 +1,32 @@
+{% extends 'base.html' %}
+
+{% block title %}Confirmation de suppression{% endblock %}
+
+{% block content %}
+    <div class="container-fluid my-5">
+        <h1 class="text-center mb-5">Confirmation de suppression</h1>
+
+        <div class="row justify-content-center">
+            <div class="col-8">
+                <div class="card shadow-lg">
+                    <div class="card-header bg-danger text-white">
+                        <h4 class="mb-0">Êtes-vous sûr de vouloir supprimer cette inscription ?</h4>
+                    </div>
+                    <div class="card-body">
+                        <p><strong>Matricule:</strong> {{ inscription.matricule }}</p>
+                        <p><strong>Nom:</strong> {{ inscription.nom }}</p>
+                        <p><strong>Prénom:</strong> {{ inscription.prenom }}</p>
+                        <p><strong>Date de naissance:</strong> {{ inscription.date_naissance|date:"d M Y" }}</p>
+                        <p><strong>Adresse:</strong> {{ inscription.adresse }}</p>
+
+                        <form method="POST">
+                            {% csrf_token %}
+                            <button type="submit" class="btn btn-danger">Confirmer la suppression</button>
+                            <a href="{% url 'dashboard' %}" class="btn btn-secondary">Annuler</a>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+{% endblock %}

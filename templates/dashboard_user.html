@@ -38,7 +38,7 @@
                                             <td>{{ inscription.droit_inscription }}</td>
                                             <td>
                                                 <a href="{% url 'modifier_inscription' inscription.id %}" class="btn btn-warning btn-sm">Modifier</a>
-                                                <a href="{% url 'delete_action' inscription.id %}" class="btn btn-danger btn-sm">Supprimer</a>
+                                                <a href="{% url 'confirm_delete' inscription.id %}" class="btn btn-danger btn-sm">Supprimer</a>
                                             </td>
                                         </tr>
                                     {% endfor %}

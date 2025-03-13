@@ -48,7 +48,8 @@ class AuditInscription(models.Model):
     type_action = models.CharField(max_length=20, choices=ACTION_CHOICES)
     utilisateur = models.ForeignKey(User, on_delete=models.CASCADE)
     date_action = models.DateTimeField(auto_now_add=True)
-    date_mise_a_jour = models.DateTimeField(default=timezone.now)
+    date_mise_a_jour = models.DateTimeField(auto_now=True)
+
 
     def __str__(self):
         return f"{self.get_type_action_display()} - {self.nom} {self.prenom} ({self.matricule}) par {self.utilisateur}"
