@@ -1,0 +1,68 @@
+{% extends 'base.html' %}
+
+{% block content %}
+    <h2>Tableau de bord de l'administrateur</h2>
+    
+    <!-- Gestion des utilisateurs -->
+    <h3>Gestion des utilisateurs</h3>
+    <ul>
+        <li><a href="{% url 'create_user' %}">Ajouter un utilisateur</a></li>
+    </ul>
+    
+    <!-- Tableau des utilisateurs -->
+    <h3>Liste des utilisateurs</h3>
+    <table>
+        <thead>
+            <tr>
+                <th>Nom d'utilisateur</th>
+                <th>Nom complet</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for user in users %}
+                <tr>
+                    <td>{{ user.username }}</td>
+                    <td>{{ user.get_full_name }}</td>
+                    <td>
+                        <a href="{% url 'modify_user' user.id %}" class="btn btn-primary">Modifier</a>
+                        <a href="{% url 'delete_user' user.id %}" class="btn btn-danger" onclick="return confirm('Êtes-vous sûr de vouloir supprimer cet utilisateur ?')">Supprimer</a>
+                    </td>
+                </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    
+    <!-- Historique des audits -->
+    <h3>Historique des audits</h3>
+    <table>
+        <thead>
+            <tr>
+                <th>Type d'action</th>
+                <th>Matricule</th>
+                <th>Nom</th>
+                <th>Prénom</th>
+                <th>Date de l'action</th>
+                <th>Utilisateur</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for audit in audits %}
+                <tr>
+                    <td>{{ audit.type_action }}</td>
+                    <td>{{ audit.matricule }}</td>
+                    <td>{{ audit.nom }}</td>
+                    <td>{{ audit.prenom }}</td>
+                    <td>{{ audit.timestamp }}</td>
+                    <td>{{ audit.utilisateur }}</td>
+                </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    
+    <h3>Statistiques des actions</h3>
+    <p>Ajouts : {{ stats.ajouts }}</p>
+    <p>Modifications : {{ stats.modifications }}</p>
+    <p>Suppressions : {{ stats.suppressions }}</p>
+
+{% endblock %}

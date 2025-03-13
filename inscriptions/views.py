@@ -1,15 +1,21 @@
-from django.contrib.auth.forms import AuthenticationForm
+from django.contrib.auth.forms import AuthenticationForm, UserCreationForm
 from django.contrib.auth import login, logout
 from django.shortcuts import render, redirect, get_object_or_404
-from inscriptions.models import Inscription, AuditInscription
-from django.contrib.auth.decorators import login_required
+from inscriptions.models import Inscription, AuditInscription, StatistiqueInscription
+from django.contrib.auth.decorators import login_required, user_passes_test
 import logging
 from django.contrib import messages
-from .forms import InscriptionForm
-from .models import StatistiqueInscription
+from .forms import InscriptionForm, CustomUserCreationForm
+from django.contrib.auth.models import User, Group
+from django.db.models.signals import post_migrate
+from django.dispatch import receiver
+from django.http import HttpResponse
 
+
+ # Si la fonction est définie dans un autre fichier dans le même répertoire
 
 # Configuration du logger
+
 logger = logging.getLogger(__name__)
 
 # Vue de la page d'accueil
@@ -18,25 +24,69 @@ def home(request):
 
 @login_required
 def dashboard(request):
+    print(f"Utilisateur: {request.user.username}, is_staff: {request.user.is_staff}")
+    print(f"Groupes: {[group.name for group in request.user.groups.all()]}")
+
+    if request.user.is_staff or request.user.groups.filter(name="Administrateur").exists():
+        return redirect('dashboard_admin')  # Redirection pour les administrateurs
+
+    return redirect('dashboard_user')  # Redirection pour les utilisateurs classiques
+
+
+@login_required
+def dashboard_user(request):
+    # Récupère toutes les inscriptions
     inscriptions = Inscription.objects.all()
-    audits = AuditInscription.objects.all()  # Récupérer toutes les entrées d'audit
-    
-    # Calcul des statistiques basées sur les actions dans les audits
-    ajouts = audits.filter(type_action='ajout').count()
-    modifications = audits.filter(type_action='Modification').count()
-    suppressions = audits.filter(type_action='Suppression').count()
 
-    print(f"Ajouts: {ajouts}, Modifications: {modifications}, Suppressions: {suppressions}")
+    # Passer les données au template
+    return render(request, 'dashboard_user.html', {'inscriptions': inscriptions})
 
+@login_required
+def dashboard_admin(request):
+    # Récupérer tous les audits
+    audits = AuditInscription.objects.all()
+
+    # Calculer les statistiques
     stats = {
-        'ajouts': ajouts,
-        'modifications': modifications,
-        'suppressions': suppressions,
+        'ajouts': audits.filter(type_action=AuditInscription.AJOUT).count(),
+        'modifications': audits.filter(type_action=AuditInscription.MODIFICATION).count(),
+        'suppressions': audits.filter(type_action=AuditInscription.SUPPRESSION).count(),
     }
 
-    return render(request, 'dashboard.html', {'inscriptions': inscriptions, 'audits': audits, 'stats': stats})
+    # Récupérer tous les utilisateurs
+    users = User.objects.all()  # Récupérer la liste de tous les utilisateurs
+
+    # Passer les données au template
+    return render(request, 'dashboard_admin.html', {
+        'audits': audits,
+        'stats': stats,
+        'users': users,  # Passer les utilisateurs récupérés au template
+    })
+
+# Signal pour créer les groupes et permissions
+@receiver(post_migrate)
+def create_roles(sender, **kwargs):
+    if sender.name == 'gestion_inscription':  # Remplacez par le nom réel de votre application
+        # Créer les groupes
+        admin_group, created = Group.objects.get_or_create(name="Administrateur")
+        user_group, created = Group.objects.get_or_create(name="Utilisateur")
+        
+        # Récupérer le modèle AuditInscription pour assigner des permissions
+        audit_content_type = ContentType.objects.get_for_model(AuditInscription)
+        
+        # Créer la permission "view_audit" pour le groupe Administrateur
+        view_audit_permission, created = Permission.objects.get_or_create(
+            codename="view_audit",
+            name="Peut voir les audits",
+            content_type=audit_content_type,
+        )
+        admin_group.permissions.add(view_audit_permission)
+
+        print("Groupes et permissions créés avec succès !")
 
 # Vue pour ajouter une inscription
+# Vérifier si l'utilisateur est un administrateur
+@user_passes_test(lambda user: not user.is_staff)
 @login_required
 def ajouter_inscription(request):
     if request.method == 'POST':
@@ -66,14 +116,14 @@ def ajouter_inscription(request):
         create_audit(inscription, 'ajout', request)
 
         messages.success(request, "Inscription ajoutée avec succès.")
-        return redirect('dashboard')
+        return redirect('dashboard_user')  # Redirection vers le dashboard utilisateur
     
     return render(request, 'ajouter_inscription.html')
 
 # Vue de la connexion (login)
 def login_view(request):
     if request.user.is_authenticated:
-        return redirect('dashboard')
+        return redirect_dashboard(request.user)
 
     if request.method == 'POST':
         form = AuthenticationForm(data=request.POST)
@@ -82,13 +132,14 @@ def login_view(request):
             login(request, user)
             logger.info(f"Connexion réussie pour {user.username}.")
             messages.success(request, "Connexion réussie !")
-            return redirect('dashboard')
+            return redirect_dashboard(user)
         else:
             logger.warning("Échec de la connexion, formulaire invalide.")
             messages.error(request, "Identifiants invalides.")
-    
+
     form = AuthenticationForm()
     return render(request, 'registration/login.html', {'form': form})
+
 
 # Vue de la déconnexion
 @login_required
@@ -96,6 +147,14 @@ def logout_view(request):
     logout(request)
     messages.info(request, "Vous avez été déconnecté.")
     return redirect('login')
+# Fonction de redirection en fonction du type d'utilisateur
+
+def redirect_dashboard(user):
+    if user.is_staff:
+        return redirect('dashboard_admin')  # Redirige vers le tableau de bord admin
+    else:
+        return redirect('dashboard_user')  # Redirige vers le tableau de bord utilisateur
+
 
 # Vue pour auditer une action sur une inscription
 @login_required
@@ -119,20 +178,14 @@ def audit_action(request, id):
             inscription.delete()
             messages.success(request, "Inscription supprimée avec succès.")
         
-    return redirect('dashboard')
+    return redirect('dashboard_user')  # Redirection vers le tableau de bord de l'utilisateur
 
 def create_audit(inscription, action, request):
-    # Vérifier si l'utilisateur est connecté
-    utilisateur = request.user if request.user.is_authenticated else None
-
-    # Si l'utilisateur n'est pas authentifié, vous pouvez soit le définir par défaut, soit lever une exception
-    if utilisateur is None:
-        # Par exemple, si vous souhaitez laisser un utilisateur par défaut (par exemple, un admin ou autre)
-        utilisateur = 'Utilisateur Anonyme'  # Ou une instance d'utilisateur par défaut
+    utilisateur = request.user if request.user.is_authenticated else 'Utilisateur Anonyme'
 
     # Assigner les anciens et nouveaux droits d'inscription
-    droit_ancien = inscription.droit_inscription  # Assurez-vous que ce champ existe dans votre modèle
-    droit_nouveau = inscription.droit_inscription  # Ajoutez la logique pour mettre à jour le droit si nécessaire
+    droit_ancien = inscription.droit_inscription  
+    droit_nouveau = inscription.droit_inscription  
 
     # Créer un audit
     AuditInscription.objects.create(
@@ -142,17 +195,18 @@ def create_audit(inscription, action, request):
         prenom=inscription.prenom,
         date_naissance=inscription.date_naissance,
         adresse=inscription.adresse,
-        droit_ancien=droit_ancien,  # Avant modification
-        droit_nouveau=droit_nouveau,  # Après modification
+        droit_ancien=droit_ancien,  
+        droit_nouveau=droit_nouveau,  
         type_action=action,
-        utilisateur=utilisateur  # Assurez-vous que l'utilisateur est renseigné
+        utilisateur=utilisateur  
     )
-
-
 
 # Vue pour afficher les statistiques des inscriptions
 @login_required
 def statistiques_inscriptions(request):
+    if not request.user.groups.filter(name="Administrateur").exists():
+        messages.error(request, "Vous n'avez pas accès à cette page.")
+        return redirect('dashboard_user')  # Ou vers une autre page d'erreur
     statistiques = StatistiqueInscription.objects.all().order_by('-timestamp')
     return render(request, 'inscriptions/statistiques_inscriptions.html', {'statistiques': statistiques})
 
@@ -160,22 +214,16 @@ def statistiques_inscriptions(request):
 @login_required
 def modifier_inscription(request, id):
     inscription = get_object_or_404(Inscription, id=id)
-    # Vérifier si l'utilisateur est connecté
-    utilisateur = request.user if request.user.is_authenticated else None
-
-    # Si l'utilisateur n'est pas authentifié, vous pouvez soit le définir par défaut, soit lever une exception
-    if utilisateur is None:
-        # Par exemple, si vous souhaitez laisser un utilisateur par défaut (par exemple, un admin ou autre)
-        utilisateur = 'Utilisateur Anonyme'  # Ou une instance d'utilisateur par défaut
 
     if request.method == 'POST':
         form = InscriptionForm(request.POST, instance=inscription)
         if form.is_valid():
-            
+            form.save()
 
             # Assigner les anciens et nouveaux droits d'inscription
-            droit_ancien = inscription.droit_inscription  # Assurez-vous que ce champ existe dans votre modèle
-            droit_nouveau = inscription.droit_inscription  # Ajoutez la logique pour mettre à jour le droit si nécessaire
+            droit_ancien = inscription.droit_inscription  
+            inscription.droit_inscription = form.cleaned_data['droit_inscription']
+            droit_nouveau = inscription.droit_inscription  
 
             # Créer un audit
             AuditInscription.objects.create(
@@ -185,14 +233,13 @@ def modifier_inscription(request, id):
                 prenom=inscription.prenom,
                 date_naissance=inscription.date_naissance,
                 adresse=inscription.adresse,
-                droit_ancien=droit_ancien,  # Avant modification
-                droit_nouveau=droit_nouveau,  # Après modification
+                droit_ancien=droit_ancien,  
+                droit_nouveau=droit_nouveau,  
                 type_action="Modification",
-                utilisateur=utilisateur  # Assurez-vous que l'utilisateur est renseigné
+                utilisateur=request.user  
             )
-            form.save()
             messages.success(request, "L'inscription a été modifiée avec succès !")
-            return redirect('dashboard')
+            return redirect('dashboard_user')
     else:
         form = InscriptionForm(instance=inscription)
 
@@ -201,41 +248,96 @@ def modifier_inscription(request, id):
 # Vue pour supprimer une inscription
 @login_required
 def delete_action(request, id):
-    # Vérifier si l'utilisateur est connecté
-    utilisateur = request.user if request.user.is_authenticated else None
-
-    # Si l'utilisateur n'est pas authentifié, vous pouvez soit le définir par défaut, soit lever une exception
-    if utilisateur is None:
-        # Par exemple, si vous souhaitez laisser un utilisateur par défaut (par exemple, un admin ou autre)
-        utilisateur = 'Utilisateur Anonyme'  # Ou une instance d'utilisateur par défaut
-    # Logique pour supprimer l'objet avec l'id donné
     try:
-        objet_a_supprimer = Inscription.objects.get(id=id)
+        inscription = Inscription.objects.get(id=id)
 
-        # Assigner les anciens et nouveaux droits d'inscription
-        droit_ancien = objet_a_supprimer.droit_inscription  # Assurez-vous que ce champ existe dans votre modèle
-        droit_nouveau = objet_a_supprimer.droit_inscription  # Ajoutez la logique pour mettre à jour le droit si nécessaire
+        # Créer un audit avant suppression
+        create_audit(inscription, 'suppression', request)
+        inscription.delete()
 
-        # Créer un audit
-        AuditInscription.objects.create(
-            inscription=objet_a_supprimer,
-            matricule=objet_a_supprimer.matricule,
-            nom=objet_a_supprimer.nom,
-            prenom=objet_a_supprimer.prenom,
-            date_naissance=objet_a_supprimer.date_naissance,
-            adresse=objet_a_supprimer.adresse,
-            droit_ancien=droit_ancien,  # Avant modification
-            droit_nouveau=droit_nouveau,  # Après modification
-            type_action="Suppression",
-            utilisateur=utilisateur  # Assurez-vous que l'utilisateur est renseigné
-        )
-        objet_a_supprimer.delete()
         messages.success(request, "L'inscription a été supprimée avec succès.")
-        return redirect('dashboard')  # Redirige vers la page du tableau de bord après la suppression
+        return redirect('dashboard_user')  # Redirige vers le tableau de bord après la suppression
     except Inscription.DoesNotExist:
-        # Gère le cas où l'objet n'existe pas
         messages.error(request, "L'inscription spécifiée n'existe pas.")
-        return redirect('dashboard')  # Redirige vers le tableau de bord en cas d'erreur
+        return redirect('dashboard_user')  # Redirige vers le tableau de bord en cas d'erreur
 
 
+@login_required
+def create_user(request):
+    # Vérifier que l'utilisateur a les droits d'accès (groupe Administrateur)
+    if not request.user.groups.filter(name="Administrateur").exists():
+        messages.error(request, "Vous n'avez pas accès à cette page.")
+        return redirect('dashboard_user')  # Redirection vers le tableau de bord non admin
+    
+    # Traitement du formulaire lors de l'envoi
+    if request.method == 'POST':
+        form = CustomUserCreationForm(request.POST)
+        if form.is_valid():
+            # Sauvegarder l'utilisateur
+            user = form.save()
+            # Vérifier si un groupe est sélectionné dans le formulaire
+            group = form.cleaned_data.get('group')  # 'group' est un champ du formulaire
+            if group:
+                # Ajouter l'utilisateur au groupe sélectionné
+                user.groups.add(group)
+            
+            # Sauvegarder les modifications
+            user.save()
 
+            messages.success(request, f"L'utilisateur {user.username} a été créé avec succès.")
+            return redirect('dashboard_admin')  # Redirection vers le tableau de bord administrateur
+
+        else:
+            # Si le formulaire est invalide
+            messages.error(request, "Formulaire invalide. Vérifiez les informations saisies.")
+    else:
+        form = CustomUserCreationForm()  # Afficher un formulaire vide si c'est une requête GET
+    
+    return render(request, 'create_user.html', {'form': form, 'name': 'Créer un utilisateur'})
+
+@login_required
+def modify_user(request, user_id):
+    # Vérifier si l'utilisateur actuel est un administrateur
+    if not request.user.groups.filter(name="Administrateur").exists():
+        messages.error(request, "Vous n'avez pas accès à cette page.")
+        return redirect('dashboard_user')  # Ou rediriger vers une autre page autorisée
+    
+    # Récupérer l'utilisateur à modifier
+    user = get_object_or_404(User, id=user_id)
+
+    if request.method == 'POST':
+        form = CustomUserCreationForm(request.POST, instance=user)
+        if form.is_valid():
+            # Sauvegarder les modifications de l'utilisateur
+            user = form.save()
+
+            # Mettre à jour les groupes de l'utilisateur
+            user.groups.clear()  # Retirer l'utilisateur des anciens groupes
+            user.groups.add(form.cleaned_data['group'])  # Ajouter l'utilisateur au groupe sélectionné
+
+            messages.success(request, "Les informations de l'utilisateur ont été mises à jour.")
+            return redirect('dashboard_admin')
+        else:
+            messages.error(request, "Formulaire invalide.")
+    else:
+        # Affichage du formulaire avec les données actuelles de l'utilisateur
+        form = CustomUserCreationForm(instance=user)
+
+    return render(request, 'modify_user.html', {'form': form})
+
+@login_required
+def delete_user(request, user_id):
+    # Vérifier si l'utilisateur actuel est un administrateur
+    if not request.user.groups.filter(name="Administrateur").exists():
+        messages.error(request, "Vous n'avez pas accès à cette page.")
+        return redirect('dashboard_user')  # Ou rediriger vers une autre page autorisée
+
+    try:
+        # Tenter de récupérer l'utilisateur à supprimer
+        user = User.objects.get(id=user_id)
+        user.delete()  # Supprimer l'utilisateur
+        messages.success(request, "L'utilisateur a été supprimé avec succès.")
+    except User.DoesNotExist:
+        messages.error(request, "L'utilisateur spécifié n'existe pas.")
+    
+    return redirect('dashboard_admin')
