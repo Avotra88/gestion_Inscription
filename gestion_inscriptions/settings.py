@@ -62,6 +62,7 @@ TEMPLATES = [
     },
 ]
 
+
 WSGI_APPLICATION = 'gestion_inscriptions.wsgi.application'
 
 # Database

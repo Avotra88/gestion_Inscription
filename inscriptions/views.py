@@ -6,10 +6,13 @@ from django.contrib.auth.decorators import login_required, user_passes_test
 import logging
 from django.contrib import messages
 from .forms import InscriptionForm, CustomUserCreationForm
-from django.contrib.auth.models import User, Group
+from django.contrib.auth.models import User, Group, Permission
 from django.db.models.signals import post_migrate
 from django.dispatch import receiver
 from django.http import HttpResponse
+from django.contrib.contenttypes.models import ContentType
+import datetime
+
 
 
  # Si la fonction est définie dans un autre fichier dans le même répertoire
@@ -43,18 +46,24 @@ def dashboard_user(request):
 
 @login_required
 def dashboard_admin(request):
-    # Récupérer tous les audits
+    # Vérifier que l'utilisateur a bien les droits d'administrateur
+    if not request.user.groups.filter(name="Administrateur").exists():
+        messages.error(request, "Vous n'avez pas accès à cette page.")
+        return redirect('dashboard_user')  # Ou une autre page autorisée
+
+    # Récupérer tous les audits d'inscription
     audits = AuditInscription.objects.all()
 
-    # Calculer les statistiques
+    # Calculer les statistiques d'actions sur les inscriptions
     stats = {
-        'ajouts': audits.filter(type_action=AuditInscription.AJOUT).count(),
-        'modifications': audits.filter(type_action=AuditInscription.MODIFICATION).count(),
-        'suppressions': audits.filter(type_action=AuditInscription.SUPPRESSION).count(),
+        'ajout': audits.filter(type_action=AuditInscription.AJOUT).count(),
+        'modification': audits.filter(type_action=AuditInscription.MODIFICATION).count() + audits.filter(type_action="Modification").count(),
+        'suppression': audits.filter(type_action=AuditInscription.SUPPRESSION).count(),
     }
 
+
     # Récupérer tous les utilisateurs
-    users = User.objects.all()  # Récupérer la liste de tous les utilisateurs
+    users = User.objects.all()  # Peut être optimisé si nécessaire
 
     # Passer les données au template
     return render(request, 'dashboard_admin.html', {
@@ -62,7 +71,7 @@ def dashboard_admin(request):
         'stats': stats,
         'users': users,  # Passer les utilisateurs récupérés au template
     })
-    
+
 @login_required
 def user_list(request):
     # Récupérer tous les utilisateurs
@@ -215,50 +224,74 @@ def create_audit(inscription, action, request):
         utilisateur=utilisateur
     )
 
-# Vue pour afficher les statistiques des inscriptions
 @login_required
 def statistiques_inscriptions(request):
     if not request.user.groups.filter(name="Administrateur").exists():
         messages.error(request, "Vous n'avez pas accès à cette page.")
-        return redirect('dashboard_user')  # Ou vers une autre page d'erreur
-    statistiques = StatistiqueInscription.objects.all().order_by('-timestamp')
-    return render(request, 'inscriptions/statistiques_inscriptions.html', {'statistiques': statistiques})
+        return redirect('dashboard_user')  # Ou rediriger vers une autre page d'erreur
 
-# Vue pour modifier une inscription
+    # Récupérer les statistiques des inscriptions, triées par date (timestamp)
+    statistiques = StatistiqueInscription.objects.all().order_by('-date_action')  # Utilisation de 'date_action' au lieu de 'timestamp'
+
+    return render(request, 'inscriptions/statistiques_inscriptions.html', {
+        'statistiques': statistiques
+    })
+
+
 @login_required
 def modifier_inscription(request, id):
+    # Récupérer l'inscription à modifier ou retourner une erreur 404 si elle n'existe pas
     inscription = get_object_or_404(Inscription, id=id)
 
     if request.method == 'POST':
+        # Créer un formulaire avec les données envoyées
         form = InscriptionForm(request.POST, instance=inscription)
         if form.is_valid():
-            form.save()
+            # Sauvegarder les modifications de l'inscription
+            ancien_droit = inscription.droit_inscription  # Ancien droit
+            inscription = form.save()
 
             # Assigner les anciens et nouveaux droits d'inscription
-            droit_ancien = inscription.droit_inscription  
-            inscription.droit_inscription = form.cleaned_data['droit_inscription']
-            droit_nouveau = inscription.droit_inscription  
+            nouveau_droit = form.cleaned_data['droit_inscription']
 
-            # Créer un audit
-            AuditInscription.objects.create(
-                inscription=inscription,
-                matricule=inscription.matricule,
-                nom=inscription.nom,
-                prenom=inscription.prenom,
-                date_naissance=inscription.date_naissance,
-                adresse=inscription.adresse,
-                droit_ancien=droit_ancien,  
-                droit_nouveau=droit_nouveau,  
-                type_action="Modification",
-                utilisateur=request.user  
-            )
-            messages.success(request, "L'inscription a été modifiée avec succès !")
-            return redirect('dashboard_user')
+            # Si les droits ont changé, créer un audit
+            if ancien_droit != nouveau_droit:
+                AuditInscription.objects.create(
+                    inscription=inscription,
+                    matricule=inscription.matricule,
+                    nom=inscription.nom,
+                    prenom=inscription.prenom,
+                    date_naissance=inscription.date_naissance,
+                    adresse=inscription.adresse,
+                    droit_ancien=ancien_droit,
+                    droit_nouveau=nouveau_droit,
+                    type_action="Modification",
+                    utilisateur=request.user
+                )
+                messages.success(request, "L'inscription a été modifiée avec succès, et l'audit a été enregistré.")
+            else:
+                AuditInscription.objects.create(
+                    inscription=inscription,
+                    matricule=inscription.matricule,
+                    nom=inscription.nom,
+                    prenom=inscription.prenom,
+                    date_naissance=inscription.date_naissance,
+                    adresse=inscription.adresse,
+                    droit_ancien=ancien_droit,
+                    droit_nouveau=nouveau_droit,
+                    type_action="Modification",
+                    utilisateur=request.user
+                )
+                messages.success(request, "L'inscription a été modifiée avec succès.")
+
+            return redirect('dashboard_user')  # Rediriger vers le dashboard de l'utilisateur après la modification
+        else:
+            messages.error(request, "Le formulaire contient des erreurs.")
     else:
+        # Initialiser le formulaire avec les données existantes de l'inscription
         form = InscriptionForm(instance=inscription)
 
     return render(request, 'modifier_inscription.html', {'form': form, 'id': id})
-
 # Vue pour supprimer une inscription
 @login_required
 def delete_action(request, id):
@@ -279,6 +312,8 @@ def confirm_delete(request, inscription_id):
     inscription = get_object_or_404(Inscription, id=inscription_id)
     
     if request.method == 'POST':
+        # Créer un audit avant suppression
+        create_audit(inscription, 'suppression', request)
         inscription.delete()
         messages.success(request, "L'inscription a été supprimée avec succès.")
         return redirect('dashboard_user')  # Redirigez vers le tableau de bord ou une autre page
@@ -325,8 +360,12 @@ def modify_user(request, user_id):
         messages.error(request, "Vous n'avez pas accès à cette page.")
         return redirect('dashboard_user')  # Ou rediriger vers une autre page autorisée
     
-    # Récupérer l'utilisateur à modifier
-    user = get_object_or_404(User, id=user_id)
+    try:
+        # Récupérer l'utilisateur à modifier
+        user = User.objects.get(id=user_id)
+    except User.DoesNotExist:
+        messages.error(request, "L'utilisateur n'existe pas.")
+        return redirect('dashboard_admin')  # Rediriger vers le dashboard si l'utilisateur n'existe pas
 
     if request.method == 'POST':
         form = CustomUserCreationForm(request.POST, instance=user)
@@ -338,6 +377,14 @@ def modify_user(request, user_id):
             user.groups.clear()  # Retirer l'utilisateur des anciens groupes
             user.groups.add(form.cleaned_data['group'])  # Ajouter l'utilisateur au groupe sélectionné
 
+            # Enregistrer une statistique d'action (modification d'utilisateur)
+            StatistiqueInscription.objects.create(
+                action=AuditInscription.MODIFICATION,  # Type d'action
+                inscription=user,  # Inscription liée à l'utilisateur, ou autre entité
+                utilisateur=request.user,  # Utilisateur effectuant l'action
+                details="Modification des informations de l'utilisateur",
+            )
+
             messages.success(request, "Les informations de l'utilisateur ont été mises à jour.")
             return redirect('dashboard_admin')
         else:
@@ -347,6 +394,7 @@ def modify_user(request, user_id):
         form = CustomUserCreationForm(instance=user)
 
     return render(request, 'modify_user.html', {'form': form})
+
 
 @login_required
 def delete_user(request, user_id):
